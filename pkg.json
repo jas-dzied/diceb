@@ -1,0 +1,8 @@
+{
+    "name": "diceb",
+    "version": "0.0.1",
+    "source": "https://github.com/jas-dzied/diceb.git",
+    "dependencies": [
+        "!https://raw.githubusercontent.com/jas-dzied/dicea/main/pkg.json"
+    ]
+}

@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+
+import random
+import sys
+
+NUM = '0123456789d.'
+OP = '+-*/()%~'
+
+class Lexer:
+  def __init__(self, text):
+    self.text = text+' '
+    self.i = -1
+    self.advance()
+  def advance(self):
+    self.i += 1
+    self.char = self.text[self.i]
+  def lex(self):
+    tokens = []
+    while self.i < len(self.text)-1:
+      if self.char in OP:
+        tokens.append(Operator(self.char))
+        self.advance()
+      elif self.char in NUM:
+        result = ''
+        while self.char in NUM:
+          result += self.char
+          self.advance()
+        if 'd' in result:
+          tokens.append(Dice(result))
+        else:
+          tokens.append(Number(result))
+      else:
+        self.advance()
+    return tokens
+
+class Number:
+  def __init__(self, value):
+    if '.' in str(value):
+      self.value = float(value)
+    else:
+      self.value = int(value)
+  def __repr__(self):
+    return f'[{self.value}]'
+  def evaluate(self, ctx):
+    return self.value
+  def compile(self):
+    return self.value
+class Operator:
+  def __init__(self, value):
+    self.value = value
+  def __repr__(self):
+    return '{'+repr(self.value)+'}'
+  def compile(self):
+    if self.value == '+':
+      return 'add'
+    elif self.value == '-':
+      return 'subtract'
+    elif self.value == '*':
+      return 'times'
+    elif self.value == '/':
+      return 'divide'
+class Dice:
+  def __init__(self, value):
+    self.value = value
+    parts = value.split('d')
+    self.count = int(parts[0]) if parts[0] != '' else 1
+    self.sides = int(parts[1])
+  def __repr__(self):
+    return f'({self.count}d{self.sides})'
+  def evaluate(self, ctx):
+    ctx['rolls'] *= self.count
+    return random.randint(1, self.sides)
+  def compile(self):
+    return f'(roll 1 {self.sides})'
+
+class Expression:
+  def __init__(self, tokens):
+    self.tokens = tokens
+  def __repr__(self):
+    return f'Expr{repr(self.tokens)}'
+  def evaluate(self, ctx):
+    op1 = self.tokens[0].evaluate(ctx)
+    op  = self.tokens[1].value
+    op2 = self.tokens[2].evaluate(ctx)
+
+    if op == '+':
+      return op1+op2
+    elif op == '-':
+      return op1-op2
+    elif op == '*':
+      return op1*op2
+    elif op == '/':
+      return op1/op2
+    elif op == '%':
+      return op1%op2
+    elif op == '~':
+      return round(op1)
+    
+  def compile(self):
+    op1 = self.tokens[0].compile()
+    op  = self.tokens[1].compile()
+    op2 = self.tokens[2].compile()
+    return f'({op} {op1} {op2})'
+
+class Tree:
+  def __init__(self, tokens):
+    self.tokens = tokens
+  def parse(self):
+
+    final = []
+    working = []
+    level = 0
+
+    for token in self.tokens:
+      if token.value == '(':
+        level += 1
+        if level > 1:
+          working.append(token)
+      elif token.value == ')':
+        level -= 1
+        if level == 0:
+          final.append(Tree(working).parse())
+          working = []
+        else:
+          working.append(token)
+      else:
+        if level == 0:
+          final.append(token)
+        else:
+          working.append(token)
+
+    if len(final) == 1:
+      return final[0]
+    else:
+      return Expression(final)
+
+class Runtime:
+  def __init__(self, expr):
+    self.expr = expr
+    self.ctx = {'rolls': 1}
+  def evaluate(self):
+    self.expr.evaluate(self.ctx)
+    result = []
+    for _ in range(self.ctx['rolls']):
+      result.append(self.expr.evaluate(self.ctx))
+    return result
+  def compile(self, funcname):
+    self.ctx = {'rolls': 1}
+    self.expr.evaluate(self.ctx)
+    result  = f"define {funcname} [\n"
+    result += f"  set result (list);\n"
+    result += f'  for i (range {self.ctx["rolls"]}) [\n'
+    result += f'    push result {self.expr.compile()};\n'
+    result += f'  ];\n'
+    result += f'  return result;\n'
+    result += f'];'
+    return result
+
+def compile(text, funcname):
+  tokens = Lexer(text).lex()
+  tree = Tree(tokens).parse()
+  runtime = Runtime(tree)
+  code = runtime.compile(funcname)
+  return code
+
+def execute(text):
+  tokens = Lexer(text).lex()
+  tree = Tree(tokens).parse()
+  runtime = Runtime(tree)
+  return runtime.evaluate()
+
+if sys.argv[1].endswith('.db'):
+   with open(sys.argv[1], 'r') as file:
+        text = file.read()
+else:
+   text = sys.argv[1]
+if '-c' in sys.argv:
+   code = compile(text, 'diceroll')
+   print(code)
+else:
+   response = execute(text)
+   print(response)
